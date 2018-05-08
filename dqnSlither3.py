@@ -171,9 +171,12 @@ with tf.Session(graph = ConNet) as sess:
     epsilon = INITIAL_EPSILON
     OBSERVE = OBSERVATION
     verbose = True
+    debug = False;
     t = 0
     reward100 = np.zeros(100)
     for i_episode in range(2000):
+        if debug:
+            break
         if i_episode == 0:
             observation_n = env.reset()
         while observation_n[0] == None:  # When Slither hasn't started
@@ -193,15 +196,18 @@ with tf.Session(graph = ConNet) as sess:
             t+=1
             #if echo_ts%10 == 0 and verbose:
             #    print(echo_ts)
-            if random.random() < 0.1:
+            if random.random() < epsilon:
                 actionidx = int(random.random()*12)
                 action = idx2act(actionidx)
                 action_n = [action for ob in observation_n]
-                #print("------------- Random Action -------------")
+                print("------------- Random Action -------------")
             else:
                 feed = {image: state_p0, keep_prob: KEEP_PROB}
                 #print("------------- Not Random ----------------")
                 action_array = sess.run(q_values, feed_dict = feed)
+                if np.isnan(action_array[0][0]):
+                    print("NAN IN THE HOLE!!!!")
+                    debug = True
                 actionidx = np.argmax(action_array)
                 action = idx2act(actionidx)
                 action_n = [action for ob in observation_n]
@@ -216,13 +222,12 @@ with tf.Session(graph = ConNet) as sess:
                 #print('FINALLY OVER!!!')
                 #print(state_p1)
                 D.append((state_p0,actionidx,reward_n[0],state_p1,done_n[0]))
-                break;
 
             if not done_n[0]:
                 rr += reward_n[0]
-            state_p1 = preprocess_obs(observation_n)
-            state_p1 = np.append(state_p1, state_p0[:, :, :, :3], axis=3)
-            D.append((state_p0,actionidx,reward_n[0],state_p1,done_n[0]))
+                state_p1 = preprocess_obs(observation_n)
+                state_p1 = np.append(state_p1, state_p0[:, :, :, :3], axis=3)
+                D.append((state_p0,actionidx,reward_n[0],state_p1,done_n[0]))
             if len(D) > REPLAY_MEMORY:
                 D.popleft()
             if t>BATCH:
@@ -248,6 +253,8 @@ with tf.Session(graph = ConNet) as sess:
                         targets[i, action_t] = reward_t + GAMMA * np.max(Q_sa)
                     feed_train = {image: [inputs[i]], actions_ref: [targets[i]], keep_prob: KEEP_PROB}
                     _, current_loss = sess.run([train_step, loss_value], feed_dict = feed_train)
+            if done_n[0]:
+                break;
             state_p0 = state_p1
             monitor = ""
             if t <= BATCH:
