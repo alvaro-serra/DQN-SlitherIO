@@ -7,7 +7,6 @@
 #################
 ### Libraries ###
 #################
-
 import gym
 import universe
 import numpy as np
@@ -15,6 +14,7 @@ import tensorflow as tf
 
 from collections import deque
 import random
+import time
 
 from skimage.exposure import rescale_intensity
 from skimage.transform import resize
@@ -22,10 +22,10 @@ from skimage import data
 from skimage.color import rgb2grey
 from skimage.color import rgb2gray
 
+
 ########################
 ### Global Variables ###
 ########################
-
 """
 There are 12 possible defined actions. The original number of actions are #pixels * 2, meaning we can
 press any pixel on the screen to define directions and either press space at the same time or not. In order
@@ -104,6 +104,7 @@ def conv2d_3(x,W):
 def max_pool_2x2(x):
     return tf.nn.max_pool_2x2(x, ksize = [1,2,2,1], strides = [1,2,2,1], padding = 'SAME')
 
+    
 #############
 ### Graph ###
 #############
@@ -169,10 +170,12 @@ with tf.Session(graph = ConNet) as sess:
     D = deque() #initialize replay memory D
     epsilon = INITIAL_EPSILON
     OBSERVE = OBSERVATION
+    verbose = True
     t = 0
     reward100 = np.zeros(100)
     for i_episode in range(2000):
-        observation_n = env.reset()
+        if i_episode == 0:
+            observation_n = env.reset()
         while observation_n[0] == None:  # When Slither hasn't started
             action = idx2act(0)
             action_n = [action for ob in observation_n]
@@ -181,33 +184,45 @@ with tf.Session(graph = ConNet) as sess:
         state_p0 = preprocess_obs_ini(observation_n)
         rr = 0
         done_n = [False]
+        echo_ts = 0
         while not done_n[0]:
             action_array = 0
             current_loss = 0
-            #env.render()
-            if random.random() < epsilon:
-                idx = int(random.random()*12)
-                action = idx2act(idx)
+            env.render()
+            echo_ts += 1
+            t+=1
+            #if echo_ts%10 == 0 and verbose:
+            #    print(echo_ts)
+            if random.random() < 0.1:
+                actionidx = int(random.random()*12)
+                action = idx2act(actionidx)
                 action_n = [action for ob in observation_n]
                 #print("------------- Random Action -------------")
             else:
                 feed = {image: state_p0, keep_prob: KEEP_PROB}
+                #print("------------- Not Random ----------------")
                 action_array = sess.run(q_values, feed_dict = feed)
                 actionidx = np.argmax(action_array)
+                action = idx2act(actionidx)
+                action_n = [action for ob in observation_n]
             if epsilon > FINAL_EPSILON:
                 epsilon *= EPSILON_DECAY
             
             observation_n, reward_n, done_n, info_n = env.step(action_n)
             if done_n[0]:# Punish hard when failing
                 reward_n[0] = -50
-                observation_n = np.zeros_like(observation)
-            if observation_n[0] == None:
+                #print(state_p0)
+                state_p1 = np.zeros_like(state_p0)
+                #print('FINALLY OVER!!!')
+                #print(state_p1)
+                D.append((state_p0,actionidx,reward_n[0],state_p1,done_n[0]))
                 break;
+
             if not done_n[0]:
                 rr += reward_n[0]
             state_p1 = preprocess_obs(observation_n)
             state_p1 = np.append(state_p1, state_p0[:, :, :, :3], axis=3)
-            D.append((state_p0,action_n,reward_n[0],state_p1,done_n[0]))
+            D.append((state_p0,actionidx,reward_n[0],state_p1,done_n[0]))
             if len(D) > REPLAY_MEMORY:
                 D.popleft()
             if t>BATCH:
@@ -230,14 +245,10 @@ with tf.Session(graph = ConNet) as sess:
                     if terminal:
                         targets[i, action_t] = reward_t
                     else:
-                        #print("TargetS_i:", targets[i])
-                        #print("TARGETS_i:", targets[i,action_t])
                         targets[i, action_t] = reward_t + GAMMA * np.max(Q_sa)
-                        #print("Targets_i+1", targets[i])
                     feed_train = {image: [inputs[i]], actions_ref: [targets[i]], keep_prob: KEEP_PROB}
                     _, current_loss = sess.run([train_step, loss_value], feed_dict = feed_train)
             state_p0 = state_p1
-            t = t+1
             monitor = ""
             if t <= BATCH:
                 monitor = "observe"
@@ -245,15 +256,15 @@ with tf.Session(graph = ConNet) as sess:
                 monitor = "explore"
             else:
                 monitor = "train"
-            #print("EPISODE:",i_episode,"/TIMESTEP:",t,"/STATE: ",monitor, \
-                    #"/EPSILON:",epsilon, "/ACTION: ",action,"/REWARD: ",rr, \
-                    #"/Q_MAX:", action_array,"/MEAN REWARD:",np.sum(reward100)/100 , \
-                    #"/Loss: ", current_loss)
-            if done_n[0]:
-                print("Episode {} finished after {} timesteps".format(i_episode,rr))    
-                break
+            if verbose and (t%30 == 0 or done_n[0]) :
+                print("EPISODE:",i_episode,"/TOTAL TIMESTEP:",t,"/TIMESTEP:",echo_ts,"/STATE: ",monitor, \
+                        "/EPSILON:",epsilon, "/ACTION: ",action,"/REWARD: ",rr, \
+                        "/Q_MAX:", action_array,"/MEAN REWARD:",np.sum(reward100)/100 , \
+                        "/Loss: ", current_loss)
+        print("Episode {} finished after {} timesteps with score {}".format(i_episode,echo_ts,rr))    
         reward100[i_episode%100] = rr
-        #print("EPISODE:",i_episode,"/TIMESTEP:",t,"/STATE: ",monitor, \
-                    #"/EPSILON:",epsilon, "/ACTION: ",action,"/REWARD: ",rr, \
-                    #"/MEAN REWARD:",np.sum(reward100)/100 , \
-                    #"/Loss: ", current_loss)
+        #if verbose:
+        #    print("EPISODE:",i_episode,"/TIMESTEP:",t,"/STATE: ",monitor, \
+        #                "/EPSILON:",epsilon, "/ACTION: ",action,"/REWARD: ",rr, \
+        #                "/MEAN REWARD:",np.sum(reward100)/100 , \
+        #                "/Loss: ", current_loss)
