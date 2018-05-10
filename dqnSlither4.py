@@ -215,6 +215,10 @@ with tf.Session(graph = ConNet) as sess:
                 epsilon *= EPSILON_DECAY
             
             observation_n, reward_n, done_n, info_n = env.step(action_n)
+            
+            if observation_n[0] == None:
+                continue;
+
             if done_n[0]:# Punish hard when failing
                 reward_n[0] = -50
                 #print(state_p0)
