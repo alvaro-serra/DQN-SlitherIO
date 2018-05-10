@@ -48,7 +48,7 @@ pointers = ([(topleft[0],topleft[1]+intery*i) for i in range(div_y-1,-1,-1)]+
 BATCH = 32 # size of minibatch
 REPLAY_MEMORY = 1000000 # number of previous transitions to remember
 GAMMA = 0.99 # decay rate of past observations
-TARGET_NETWORK_UP_FREQ = 10000 # frequency with which the target network is updated. Parameter C.
+TARGET_NETWORK_UP_FREQ = 10000 # frequency with which the target network is updated. Parameter C. #test 100
 k = 4 #TODO
 UPDATE_FREQ = 4 #TODO# update of the network
 LEARNING_RATE = 0.00025 
@@ -60,7 +60,7 @@ EXPLORE = 1000000. # frames over which to anneal epsilon
 FINAL_EPSILON = 0.10 # final value of epsilon
 
 EPSILON_DECAY = (INITIAL_EPSILON - FINAL_EPSILON)/EXPLORE
-OBSERVATION = 50000. # timesteps to observe before training
+OBSERVATION = 50000. # timesteps to observe before training #test 33
 
 
 ACTIONS = 12 # number of valid actions
@@ -405,7 +405,7 @@ with tf.Session(graph = ConNet) as sess:
 
                     sess.run(tf.assign(Wp_fc2,W_fc2)) #5th layer
                     sess.run(tf.assign(bp_fc2,b_fc2))
-
+                    
 
             ## IN EPISODE: if terminal stop and get out of episode       
             if done_n[0]:
