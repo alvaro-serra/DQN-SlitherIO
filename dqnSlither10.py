@@ -15,6 +15,8 @@ import tensorflow as tf
 from collections import deque
 import random
 import time
+import os
+import csv
 
 from skimage.exposure import rescale_intensity
 from skimage.transform import resize
@@ -61,7 +63,7 @@ FINAL_EPSILON = 0.10 # final value of epsilon
 
 EPSILON_DECAY = (INITIAL_EPSILON - FINAL_EPSILON)/EXPLORE
 OBSERVATION = 100#50000. # timesteps to observe before training #TOREPAIR
-
+MODEL_SAVER = 100#250000 #TOREPAIR
 
 ACTIONS = 12 # number of valid actions
 KEEP_PROB = 1.0#0.9 as we train very little
@@ -112,7 +114,12 @@ def conv2d_3(x,W):
 def max_pool_2x2(x):
     return tf.nn.max_pool_2x2(x, ksize = [1,2,2,1], strides = [1,2,2,1], padding = 'SAME')
 
-    
+def find_last_model():
+    model_list = next(os.walk("./train"))[1]
+    model_list = [int(element[9:]) for element in model_list]
+    model_list.sort()
+    return model_list[-1]
+
 #############
 ### Graph ###
 #############
@@ -213,25 +220,51 @@ with ConNet.as_default():
                                 epsilon = MIN_SQUARED_GRADIENT,
                                 decay = SQUARED_GRADIENT_MOMENTUM).minimize(loss_value)
 
+    saver = tf.train.Saver()
 
 
-
+####### Session Parameters #######
+# Now it is automatatised ###loading = False #First training session --> False #Otherwise --> True
+train = True # Training --> True  # Test --> False
 ###############
 ### Session ###
 ###############
 
 with tf.Session(graph = ConNet) as sess:
+    ## Weight and csv file writers initialisation
+    if next(os.walk("./train"))[1] == []:
+        timesteps_csvfile = open('train/timestep_data.csv','a')
+        episodes_csvfile = open('train/episode_data.csv','a')
+        listwriter_ts = csv.writer(timesteps_csvfile,delimiter = ',')
+        listwriter_ep = csv.writer(episodes_csvfile,delimiter = ',')
+        header_ts = "EPISODE|TOTAL FRAMES|FRAME|STATE|EPSILON|ACTION|REWARD|Q_MAX|MEAN REWARD|Last Batch Loss Mean"
+        header_ep = "#Episode|#Frame|#Epsode Timesteps|Total episode score|Last Mean Batch Loss"
+        listwriter_ts.writerow(header_ts.split('|'))
+        listwriter_ep.writerow(header_ep.split('|'))
+
+        tf.global_variables_initializer().run() #init Q(s,a|w) with random weights
+
+    else:
+        timesteps_csvfile = open('train/timestep_data.csv','a')
+        episodes_csvfile = open('train/episode_data.csv','a')
+        listwriter_ts = csv.writer(timesteps_csvfile,delimiter = ',')
+        listwriter_ep = csv.writer(episodes_csvfile,delimiter = ',')
+
+        lastmodel = find_last_model()
+        saver.restore(sess, "train/model_ts_"+str(lastmodel)+"/model.ckpt")
+        print("Weights from the "+lastmodel+"th model LOADED!")
+
 
     ##Initialisation variables outside from episodes
     env = gym.make('internet.SlitherIO-v0')
     env.configure(remotes=1)  # automatically creates a local docker container
-    tf.global_variables_initializer().run() #init Q(s,a|w) with random weights
     D = deque() #initialize replay memory D
     epsilon = INITIAL_EPSILON
     verbose = True
     debug = False;
     t = 0
     reward100 = np.zeros(100)
+
 
     ## Initialisation of target network (q'model) as a copy of the original one.
     print('UPDATING TARGET MODEL')
@@ -255,7 +288,8 @@ with tf.Session(graph = ConNet) as sess:
 
     ## Starting the episodes pipeline
     for i_episode in range(2000):
-
+        if t>10000000:
+            break
         ## OUT EPISODE: break condition in case a targeted bug is found
         if debug:
             break
@@ -281,10 +315,11 @@ with tf.Session(graph = ConNet) as sess:
         done_n = [False]
         echo_ts = 0
 
-        ## OUT EPISODE: Episode initialization of vars. action_array and current_loss
-        action_array = 0
-        current_loss = 0
 
+        ## OUT EPISODE: Episode initialization of vars. action_array and current_loss
+        action_array = -1
+        current_loss = -1
+        mean_batch_loss = -1
 
         ## OUT EPISODE: Episode start
         while not done_n[0]:
@@ -360,7 +395,7 @@ with tf.Session(graph = ConNet) as sess:
 
             ## IN EPISODE: If we have filled enough the buffer we perform replay memory
             ##             START OF MEMORY REPLAY
-            if t>OBSERVATION and t%UPDATE_FREQ == 0:
+            if t>OBSERVATION and t%UPDATE_FREQ == 0 and train:
 
                 ## IN MEMORY REPLAY: - Sample memory from trajectories
                 ##                   - Init: - neural net inputs (states)
@@ -371,6 +406,7 @@ with tf.Session(graph = ConNet) as sess:
                 targets = np.zeros((BATCH,ACTIONS))
 
                 ## IN MEMORY REPLAY: define inputs and labels and train Q-model using SGD from a minibatch
+                mean_batch_loss = 0
                 for i in range(0,len(minibatch)):
 
                     ## IN TRAINING: define st, at, rt, st+1, terminal of this sample
@@ -405,10 +441,11 @@ with tf.Session(graph = ConNet) as sess:
                     ## IN TRAINING: Training step
                     feed_train = {image: [inputs[i]], actions_ref: [targets[i]], keep_prob: KEEP_PROB, actionhist: [action_history]}
                     _, current_loss = sess.run([train_step, loss_value], feed_dict = feed_train)
-
+                    mean_batch_loss += current_loss
+                mean_batch_loss /= len(minibatch)
             ## IN MEMORY REPLAY: If timesteps % TARGET_NETWORK_UP_FREQ == 0:
             ##                                          then Q'model = Qmodel
-            if t%TARGET_NETWORK_UP_FREQ == 0 and t > OBSERVATION:
+            if t%TARGET_NETWORK_UP_FREQ == 0 and t > OBSERVATION and train:
                 print('UPDATING TARGET MODEL')
                 sess.run(tf.assign(Wp_conv1,W_conv1)) #1st layer 
                 sess.run(tf.assign(bp_conv1,b_conv1))
@@ -443,16 +480,32 @@ with tf.Session(graph = ConNet) as sess:
                 monitor = "train"
             if verbose and (t%30 == 0 or done_n[0]) :
                 print("EPISODE:",i_episode,"/TOTAL TIMESTEP:",t,"/TIMESTEP:",echo_ts,"/STATE: ",monitor, \
-                        "/EPSILON:",epsilon, "/ACTION: ",action,"/REWARD: ",rr, \
+                        "/EPSILON:",epsilon, "/ACTION: ",actionidx,"/REWARD: ",rr, \
                         "/Q_MAX:", action_array,"/MEAN REWARD:",np.sum(reward100)/100 , \
-                        "/Loss: ", current_loss)
+                        "/Last Mean Batch Loss: ", mean_batch_loss)
+                
+                ## IN EPISODE: Print variables to a CSV file
+                if print_to_csv:
+                    table = [i_episode,t,echo_ts,monitor,epsilon,
+                            actionidx,rr,action_array,np.sum(reward100)/100,mean_batch_loss]
+                    listwriter_ts.writerow(table)
 
-            ## IN EPISODE: #TODO Print variables to a file
+            ## IN EPISODE: save the model's weights
+                ### TODO: save the model's memory replay
+            if t % MODEL_SAVER == 0 and t>OBSERVATION:
+                if not os.path.exists("train/model_ts_"+str(t)):
+                    os.makedirs("train/model_ts_"+str(t))
+                save_path = saver.save(sess, "train/model_ts_"+str(t)+"/model.ckpt")
+                print("Model saved in path: %s" % save_path)
         
-        ## OUT EPISODE: check performance through the episode
-        print("Episode {} finished after {} timesteps with score {}".format(i_episode,echo_ts,rr))    
-        
+        ## OUT EPISODE: check performance through the episode and print to a CSV file
+        print("Episode {} finished at frame {}, after {} timesteps with score {} and last mean batch loss{}".format(i_episode,t,echo_ts,rr,mean_batch_loss))    
+        if print_to_csv:
+            table = [i_episode,t,echo_ts,rr,mean_batch_loss]
+            listwriter_ep.writerow(table)
         ## OUT EPISODE: update last 100 episode cummulative rewards array
         reward100[i_episode%100] = rr
         
-        ## OUT EPISODE: #TODO Cross-episode plots, prints to a file... 
+         
+
+
