@@ -220,7 +220,7 @@ with ConNet.as_default():
                                 epsilon = MIN_SQUARED_GRADIENT,
                                 decay = SQUARED_GRADIENT_MOMENTUM).minimize(loss_value)
 
-    saver = tf.train.Saver()
+    saver = tf.train.Saver(max_to_keep = None)
 
 
 ####### Session Parameters #######
