@@ -17,6 +17,7 @@ import random
 import time
 import os
 import csv
+import pickle
 
 from skimage.exposure import rescale_intensity
 from skimage.transform import resize
@@ -242,24 +243,29 @@ with tf.Session(graph = ConNet) as sess:
         listwriter_ts.writerow(header_ts.split('|'))
         listwriter_ep.writerow(header_ep.split('|'))
 
+        ## Initialise weights randomly, replay memory (empty) and epsilon
         tf.global_variables_initializer().run() #init Q(s,a|w) with random weights
+        D = deque() #initialize replay memory D
+        epsilon = INITIAL_EPSILON
 
     else:
         timesteps_csvfile = open('train/timestep_data.csv','a')
         episodes_csvfile = open('train/episode_data.csv','a')
         listwriter_ts = csv.writer(timesteps_csvfile,delimiter = ',')
         listwriter_ep = csv.writer(episodes_csvfile,delimiter = ',')
-
+        
+        ## Load weights and replay memory (from last session)
         lastmodel = find_last_model()
         saver.restore(sess, "train/model_ts_"+str(lastmodel)+"/model.ckpt")
         print("Weights from the "+lastmodel+"th model LOADED!")
+        fload = open('train/memory_replay.pkl','rb')
+        D,epsilon = pickle.load(fload)
+        fload.close()
 
 
     ##Initialisation variables outside from episodes
     env = gym.make('internet.SlitherIO-v0')
     env.configure(remotes=1)  # automatically creates a local docker container
-    D = deque() #initialize replay memory D
-    epsilon = INITIAL_EPSILON
     verbose = True
     debug = False;
     t = 0
@@ -491,12 +497,15 @@ with tf.Session(graph = ConNet) as sess:
                     listwriter_ts.writerow(table)
 
             ## IN EPISODE: save the model's weights
-                ### TODO: save the model's memory replay
+            ##              save the model's memory replay
             if t % MODEL_SAVER == 0 and t>OBSERVATION:
                 if not os.path.exists("train/model_ts_"+str(t)):
                     os.makedirs("train/model_ts_"+str(t))
                 save_path = saver.save(sess, "train/model_ts_"+str(t)+"/model.ckpt")
-                print("Model saved in path: %s" % save_path)
+                fsave = open('train/memory_replay.pkl','wb')
+                pickle.dump([D,epsilon],fsave)
+                fsave.close()
+                print("Model saved in path: %s, and memory replay saved" % save_path)
         
         ## OUT EPISODE: check performance through the episode and print to a CSV file
         print("Episode {} finished at frame {}, after {} timesteps with score {} and last mean batch loss{}".format(i_episode,t,echo_ts,rr,mean_batch_loss))    
