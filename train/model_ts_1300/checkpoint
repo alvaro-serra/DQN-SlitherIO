@@ -1,6 +1,0 @@
-model_checkpoint_path: "model.ckpt"
-all_model_checkpoint_paths: "../model_ts_900/model.ckpt"
-all_model_checkpoint_paths: "../model_ts_1000/model.ckpt"
-all_model_checkpoint_paths: "../model_ts_1100/model.ckpt"
-all_model_checkpoint_paths: "../model_ts_1200/model.ckpt"
-all_model_checkpoint_paths: "model.ckpt"
