@@ -300,8 +300,8 @@ with tf.Session(graph = ConNet) as sess:
 
 
     ## Starting the episodes pipeline
-    for i_episode in range(starting_episode,2000):
-        if t>10000000:
+    for i_episode in range(starting_episode,10000000):
+        if t>50000000:
             break
         ## OUT EPISODE: break condition in case a targeted bug is found
         if debug:
