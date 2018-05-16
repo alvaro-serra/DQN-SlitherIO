@@ -64,10 +64,10 @@ FINAL_EPSILON = 0.10 # final value of epsilon
 
 EPSILON_DECAY = (INITIAL_EPSILON - FINAL_EPSILON)/EXPLORE
 OBSERVATION = 50000. # timesteps to observe before training #TOREPAIR --> REPAIRED
-MODEL_SAVER = 250000 #TOREPAIR --> REPAIRED
+MODEL_SAVER = 70000 #TOREPAIR --> REPAIRED before 250000 --> passed to 70000 for stability issues
 
 ACTIONS = 12 # number of valid actions
-KEEP_PROB = 1.0#0.9 as we train very little
+KEEP_PROB = 0.9#0.9 as we train very little
 
 
 #################
@@ -135,12 +135,12 @@ with ConNet.as_default():
     keep_prob = tf.placeholder(tf.float32)
 
     ## 1st layer
-    # Q_model #8x8 convolution layer, depth 1 --> depth 32
+    # Q_model #8x8 convolution layer, depth 4 --> depth 32
     W_conv1 = weight_variable([8,8,4,32])
     b_conv1 = bias_variable([20,20,32])
     h_conv1 = tf.nn.relu(conv2d_1(x_image,W_conv1) + b_conv1)
 
-    # Q'_model #8x8 convolution layer, depth 1 --> depth 32
+    # Q'_model #8x8 convolution layer, depth 4 --> depth 32
     Wp_conv1 = weight_variable([8,8,4,32])
     bp_conv1 = bias_variable([20,20,32])
     hp_conv1 = tf.nn.relu(conv2d_1(x_image,Wp_conv1) + bp_conv1)
@@ -233,7 +233,6 @@ print_to_csv = True
 ###############
 
 with tf.Session(graph = ConNet) as sess:
-    first_step_sess = True
     ## Weight and csv file writers initialisation
     if next(os.walk("./train"))[1] == []:
         timesteps_csvfile = open('train/timestep_data.csv','a')
@@ -301,15 +300,14 @@ with tf.Session(graph = ConNet) as sess:
 
     ## Starting the episodes pipeline
     for i_episode in range(starting_episode,10000000):
-        if t>50000000:
+        if t>10000000:
             break
         ## OUT EPISODE: break condition in case a targeted bug is found
         if debug:
             break
 
-        ## OUT EPISODE: If it's the first episode initialise the environment
-        if first_step_sess == True:
-            observation_n = env.reset()
+        ## OUT EPISODE: initialise the environment at the start of the episode
+        observation_n = env.reset()
 
         ## OUT EPISODE: When the episode is initialising and no observation can be extracted
         while observation_n[0] == None:  # When Slither hasn't started
@@ -338,7 +336,8 @@ with tf.Session(graph = ConNet) as sess:
         while not done_n[0]:
 
             ## IN EPISODE: Render the environment
-            env.render()
+            if i_episode%20 == 0:
+                env.render()
 
             ## IN EPISODE: update timestep tracking var. and total_timestep trackin var.
             echo_ts += 1
@@ -491,7 +490,7 @@ with tf.Session(graph = ConNet) as sess:
                 monitor = "explore"
             else:
                 monitor = "train"
-            if verbose and (t%30 == 0 or done_n[0]) :
+            if verbose and (t%100 == 0 or done_n[0]) :
                 print("EPISODE:",i_episode,"/TOTAL TIMESTEP:",t,"/TIMESTEP:",echo_ts,"/STATE: ",monitor, \
                         "/EPSILON:",epsilon, "/ACTION: ",actionidx,"/REWARD: ",rr, \
                         "/Q_MAX:", action_array,"/MEAN REWARD:",np.sum(reward100)/100 , \
