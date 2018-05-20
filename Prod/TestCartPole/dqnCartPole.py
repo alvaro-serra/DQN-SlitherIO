@@ -51,7 +51,7 @@ pointers = ([(topleft[0],topleft[1]+intery*i) for i in range(div_y-1,-1,-1)]+
 BATCH = 32 # size of minibatch
 REPLAY_MEMORY = 100000 # number of previous transitions to remember
 GAMMA = 0.99 # decay rate of past observations
-TARGET_NETWORK_UP_FREQ = 100 # frequency with which the target network is updated. Parameter C. #test 100
+TARGET_NETWORK_UP_FREQ = 200 # frequency with which the target network is updated. Parameter C. #test 100
 k = 1 # freq of taking actions
 UPDATE_FREQ = 1 # update of the network
 
@@ -70,7 +70,7 @@ EPSILON_DECAY = (INITIAL_EPSILON - FINAL_EPSILON)/EXPLORE
 MODEL_SAVER = 70000 #TOREPAIR --> REPAIRED before 250000 --> passed to 70000 for stability issues
 
 ACTIONS = 2 # number of valid actions
-KEEP_PROB = 0.9 #0.9 as we train very little
+KEEP_PROB = 1.0 #0.9 as we train very little
 
 
 #################
@@ -356,7 +356,6 @@ with tf.Session(graph = ConNet) as sess:
             ##                                               - append s,a,r,s+1,terminal,action_history to the database                                                  
             if done_n:# Punish hard when failing
                 reward_n = -1
-                #print(state_p0)
                 state_p1 = np.zeros_like(state_p0)
                 aux = np.zeros(ACTIONS); aux[actionidx] = 1;
                 acthistp1 = np.append([aux],acthist[:3,:],axis = 0)
@@ -368,12 +367,12 @@ with tf.Session(graph = ConNet) as sess:
             ##                                       - preprocess obs to state_p1
             ##                                       - append s,a,r,s+1,terminal,action history
             if not done_n:
-                rr += reward_n
                 state_p1 = [observation_n]
                 aux = np.zeros(ACTIONS); aux[actionidx] = 1;
                 acthistp1 = np.append([aux],acthist[:3,:],axis = 0)
                 D.append((state_p0,actionidx,reward_n,state_p1,done_n,acthist,acthistp1))
 
+            rr+=reward_n
             ## IN EPISODE: Check that replay memory buffer does not surpass max. cap.
             if len(D) > REPLAY_MEMORY:
                 D.popleft()
@@ -416,7 +415,7 @@ with tf.Session(graph = ConNet) as sess:
                     targets[i] = sess.run(q_values, feed_dict = feed_state_t)
                     
                     ## IN TRAINING: Building st+1 q-values with Q'_model
-                    Q_sa = sess.run(q_values, feed_dict = feed_state_t1)
+                    Q_sa = sess.run(qp_values, feed_dict = feed_state_t1)
 
                     ## IN TRAINING: Build the label
                     if terminal:
@@ -431,7 +430,7 @@ with tf.Session(graph = ConNet) as sess:
             
             ## IN EPISODE: If timesteps % TARGET_NETWORK_UP_FREQ == 0:
             ##                                          then Q'model = Qmodel
-            if t%TARGET_NETWORK_UP_FREQ == 0 and t>OBSERVATION and train and False:
+            if t%TARGET_NETWORK_UP_FREQ == 0 and t>OBSERVATION and train:
                 print('UPDATING TARGET MODEL')
 
                 sess.run(tf.assign(Wp_fc1,W_fc1)) #1th layer
@@ -443,11 +442,6 @@ with tf.Session(graph = ConNet) as sess:
                 sess.run(tf.assign(Wp_fc3,W_fc3)) #3th layer
                 sess.run(tf.assign(bp_fc3,b_fc3))
                                 
-
-            ## IN EPISODE: if terminal stop and get out of episode       
-            if done_n:
-                break;
-
             ## IN EPISODE: make state_t = state_t+1
             state_p0 = state_p1
             acthist = acthistp1
